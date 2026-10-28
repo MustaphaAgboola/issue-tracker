@@ -47,7 +47,7 @@ const idempotencyKey = z
   .min(1)
   .max(191)
   .optional()
-  .describe("Unique key for this action, sent as the Idempotency-Key header. Reuse the same key when retrying so it is not applied twice. Derived from the call itself when omitted, so an identical retry sends the same key.");
+  .describe("Unique key for this action, sent as the Idempotency-Key header. Reuse the same key when retrying so it is not applied twice. Derived from the call itself when omitted, so an identical retry sends the same key — which also means two deliberate identical calls collapse into one for 24 hours. Pass a new key to repeat an identical action on purpose.");
 
 const cursor = z.string().optional().describe("Opaque cursor from a previous response.");
 const wait = z.number().int().min(0).max(25).optional().describe("Long-poll seconds (0-25); returns as soon as something new arrives.");
@@ -986,6 +986,13 @@ export function describeTool(tool: ToolDef): string {
  *
  * Object keys are sorted before hashing so the digest does not depend on the
  * order in which fields were assembled.
+ *
+ * The trade-off is deliberate: because the key follows the content, two
+ * genuinely intended identical calls — the same comment posted twice on
+ * purpose — also collapse into one inside the API's 24-hour window. A caller
+ * that means to repeat itself passes an explicit idempotencyKey, which is sent
+ * unchanged. Silently duplicating a retried write is the worse failure, so the
+ * safe default is to deduplicate and let the caller opt out.
  */
 function derivedIdempotencyKey(
   request: Pick<RequestSpec, "method" | "path" | "query" | "body">,

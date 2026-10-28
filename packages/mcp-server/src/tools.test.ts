@@ -93,6 +93,20 @@ describe("buildRequest", () => {
     expect(fixed.headers).toEqual({ "Idempotency-Key": "k" });
   });
 
+  it("lets a caller repeat an identical action on purpose with an explicit key (#633)", () => {
+    // The derived key deduplicates retries, so a deliberate repeat — filing the
+    // same report twice on purpose — has to opt out by supplying its own key.
+    const input = { title: "Same title", description: "Same description" };
+    const derived = buildRequest(tool("ziki_create_issue"), input, { projectId: "p" });
+    const first = buildRequest(tool("ziki_create_issue"), { ...input, idempotencyKey: "deliberate-1" }, { projectId: "p" });
+    const second = buildRequest(tool("ziki_create_issue"), { ...input, idempotencyKey: "deliberate-2" }, { projectId: "p" });
+    expect(first.headers?.["Idempotency-Key"]).toBe("deliberate-1");
+    expect(second.headers?.["Idempotency-Key"]).toBe("deliberate-2");
+    expect(first.headers?.["Idempotency-Key"]).not.toBe(second.headers?.["Idempotency-Key"]);
+    // Both differ from the derived default, so opting out always escapes it.
+    expect(derived.headers?.["Idempotency-Key"]).not.toBe(first.headers?.["Idempotency-Key"]);
+  });
+
   it("derives a different idempotency key for a different call (#633)", () => {
     const key = (input: Record<string, unknown>, projectId: string | null = "p") =>
       buildRequest(tool("ziki_create_issue"), input, { projectId }).headers?.["Idempotency-Key"];
