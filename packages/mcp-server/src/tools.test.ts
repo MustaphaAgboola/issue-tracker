@@ -81,15 +81,25 @@ describe("buildRequest", () => {
     expect(comment.body).toEqual({ body: "hi" });
   });
 
-  it("sends the idempotency key as a header, generating one unless given", () => {
+  it("sends the idempotency key as a header, deriving a stable one unless given (#633)", () => {
     const input = { title: "Bug title", description: "Steps to reproduce" };
     const a = buildRequest(tool("ziki_create_issue"), input, { projectId: "p" });
     const b = buildRequest(tool("ziki_create_issue"), input, { projectId: "p" });
     expect(a.headers?.["Idempotency-Key"]).toBeTruthy();
-    expect(a.headers?.["Idempotency-Key"]).not.toBe(b.headers?.["Idempotency-Key"]);
+    // A retry of the same call must reuse the key, or the API cannot deduplicate it.
+    expect(a.headers?.["Idempotency-Key"]).toBe(b.headers?.["Idempotency-Key"]);
     expect(a.body).not.toHaveProperty("idempotencyKey");
     const fixed = buildRequest(tool("ziki_create_issue"), { ...input, idempotencyKey: "k" }, { projectId: "p" });
     expect(fixed.headers).toEqual({ "Idempotency-Key": "k" });
+  });
+
+  it("derives a different idempotency key for a different call (#633)", () => {
+    const key = (input: Record<string, unknown>, projectId: string | null = "p") =>
+      buildRequest(tool("ziki_create_issue"), input, { projectId }).headers?.["Idempotency-Key"];
+    const base = { title: "Bug title", description: "Steps to reproduce" };
+    expect(key(base)).not.toBe(key({ ...base, title: "Another title" }));
+    expect(key(base)).not.toBe(key({ ...base, description: "Different steps" }));
+    expect(key(base)).not.toBe(key(base, "other-project"));
   });
 
   it("sends an empty JSON body on POSTs with nothing to send, and none on GET/DELETE", () => {
